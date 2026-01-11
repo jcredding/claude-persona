@@ -66,5 +66,31 @@ describe ClaudePersona::PersonaConfig do
       config.prompt.not_nil!.system.should contain("Line one.")
       config.prompt.not_nil!.system.should contain("Line two.")
     end
+
+    it "parses initial_message in prompt section" do
+      toml = <<-TOML
+      description = "Test"
+
+      [prompt]
+      system = "You are helpful."
+      initial_message = "Start working on the task."
+      TOML
+
+      config = ClaudePersona::PersonaConfig.from_toml(toml)
+      config.prompt.not_nil!.system.should eq("You are helpful.")
+      config.prompt.not_nil!.initial_message.should eq("Start working on the task.")
+    end
+
+    it "defaults initial_message to empty string" do
+      toml = <<-TOML
+      description = "Test"
+
+      [prompt]
+      system = "You are helpful."
+      TOML
+
+      config = ClaudePersona::PersonaConfig.from_toml(toml)
+      config.prompt.not_nil!.initial_message.should eq("")
+    end
   end
 end

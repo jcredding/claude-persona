@@ -108,6 +108,39 @@ describe ClaudePersona::CommandBuilder do
       args.should contain("--strict-mcp-config")
       args.should contain("--mcp-config")
     end
+
+    it "adds initial_message as positional argument when present in config" do
+      config = config_with_initial_message("Begin your task.")
+      builder = ClaudePersona::CommandBuilder.new(config)
+
+      args = builder.build
+      args.last.should eq("Begin your task.")
+    end
+
+    it "adds initial_message as positional argument when passed directly" do
+      config = minimal_config
+      builder = ClaudePersona::CommandBuilder.new(config, initial_message: "Start now.")
+
+      args = builder.build
+      args.last.should eq("Start now.")
+    end
+
+    it "prefers passed initial_message over config" do
+      config = config_with_initial_message("From config")
+      builder = ClaudePersona::CommandBuilder.new(config, initial_message: "From param")
+
+      args = builder.build
+      args.last.should eq("From param")
+    end
+
+    it "omits initial_message when empty" do
+      config = minimal_config
+      builder = ClaudePersona::CommandBuilder.new(config)
+
+      args = builder.build
+      # Last arg should be a flag value, not an initial message
+      args.last.should_not eq("")
+    end
   end
 
   describe "#format_command" do
@@ -144,6 +177,26 @@ describe ClaudePersona::CommandBuilder do
 
       output = builder.format_command
       output.should contain("\"two words\"")
+    end
+
+    it "includes initial_message with -- separator" do
+      config = config_with_initial_message("Begin work")
+      builder = ClaudePersona::CommandBuilder.new(config)
+
+      output = builder.format_command
+      output.should contain("-- \"Begin work\"")
+      # Should be at the end on one line
+      output.lines.last.should eq("  -- \"Begin work\"")
+    end
+
+    it "truncates long initial_message" do
+      long_message = "x" * 100
+      config = minimal_config
+      builder = ClaudePersona::CommandBuilder.new(config, initial_message: long_message)
+
+      output = builder.format_command
+      output.should contain("...")
+      output.should_not contain("x" * 100)
     end
   end
 end
@@ -208,6 +261,17 @@ def config_with_mcp(configs : Array(String)) : ClaudePersona::PersonaConfig
 
   [mcp]
   configs = [#{configs_toml}]
+  TOML
+  )
+end
+
+def config_with_initial_message(message : String) : ClaudePersona::PersonaConfig
+  ClaudePersona::PersonaConfig.from_toml(<<-TOML
+  description = "Test"
+
+  [prompt]
+  system = "You are helpful."
+  initial_message = "#{message}"
   TOML
   )
 end

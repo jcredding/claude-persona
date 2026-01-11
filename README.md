@@ -37,9 +37,9 @@ make install
 
 ## Quick Start
 
-1. **Export your MCP configs from Claude**
+1. **Import your MCP configs from Claude**
    ```bash
-   claude-persona mcp export-all
+   claude-persona mcp import-all
    ```
 
 2. **Create a persona**
@@ -65,24 +65,94 @@ claude-persona list                # List all available personas
 claude-persona show <name>         # Display persona configuration
 claude-persona generate            # Create new persona interactively
 claude-persona rename <old> <new>  # Rename a persona
+claude-persona remove <name>       # Delete a persona (prompts for confirmation)
+```
+
+The `list` command shows personas with their paths for easy discovery:
+
+```
+Available personas:
+
+  researcher
+    Technical research assistant for exploration and planning
+    Model: opus
+    MCPs: context7, linear-server
+    Permission mode: default
+    Path: /Users/kelly/.claude-persona/personas/researcher.toml
+
 ```
 
 ### MCP Management
 
-MCPs are configured in Claude first, then exported to claude-persona:
+MCPs are configured in Claude first, then imported to claude-persona. The import reads directly from Claude's config files (`~/.claude.json` for user-scope, `.claude.json` for project-scope).
 
 ```bash
-# First, configure in Claude
-claude mcp add --transport http context7 https://mcp.context7.com/mcp
+# See what MCPs are available to import (from Claude's config)
+claude-persona mcp available
 
-# Then export to claude-persona
-claude-persona mcp export context7
-claude-persona mcp export-all     # Export all at once
+# Import MCPs to claude-persona
+claude-persona mcp import context7
+claude-persona mcp import-all     # Import all at once
 
-# Manage exported configs
-claude-persona mcp list           # List exported configs
-claude-persona mcp show <name>    # Display config JSON
-claude-persona mcp remove <name>  # Delete exported config
+# Manage imported configs
+claude-persona mcp list           # List imported configs
+claude-persona mcp show <name>    # Display imported config JSON
+claude-persona mcp remove <name>  # Delete imported config (prompts for confirmation)
+```
+
+The `mcp available` command shows MCPs from both scopes:
+
+```
+Available MCP servers to import:
+
+User scope (~/.claude.json):
+  context7 (http)
+  google-calendar (stdio)
+
+Project scope (/path/to/project/.claude.json):
+  (none available)
+```
+
+The `mcp list` command shows imported configs with their paths:
+
+```
+MCP configs:
+  context7 (http): /Users/kelly/.claude-persona/mcp/context7.json
+  google-calendar (stdio): /Users/kelly/.claude-persona/mcp/google-calendar.json
+  linear-server (sse): /Users/kelly/.claude-persona/mcp/linear-server.json
+```
+
+### Generate Command
+
+Create a new persona interactively:
+
+```bash
+claude-persona generate
+```
+
+This launches Claude (using Opus) to interview you and create a persona config. The generator asks about:
+
+- **Developer role** - Backend, frontend, full-stack, DevOps, code reviewer, research assistant, personal assistant, or something unique
+- **Model selection** - Opus for complex reasoning, Sonnet for balanced, Haiku for fast/cheap
+- **Directory access** - Which directories the persona should have access to
+- **MCP servers** - External integrations (must be imported first)
+- **Tool permissions** - Any tools to restrict or deny
+- **Permission mode** - How much autonomy the persona should have
+- **System prompt** - Expertise, communication style, startup routines
+- **Initial message** (optional) - Message that triggers Claude to act immediately on launch
+
+After the interview, Claude proposes a name, shows a preview of the config, and writes it to `~/.claude-persona/personas/<name>.toml`.
+
+```
+✨ Claude Persona Generator
+   Model: opus
+   Directories:
+     - ~/.claude-persona/personas
+     - ~/.claude-persona/mcp
+   Allowed tools: Read, Write, Glob, AskUserQuestion
+
+   Claude will interview you and create a new persona config.
+
 ```
 
 ## Configuration
@@ -94,7 +164,7 @@ claude-persona mcp remove <name>  # Delete exported config
 ├── personas/           # Persona TOML files
 │   ├── assistant.toml
 │   └── rails-dev.toml
-└── mcp/               # Exported MCP JSON configs
+└── mcp/               # Imported MCP JSON configs
     ├── context7.json
     └── linear.json
 ```
@@ -115,8 +185,8 @@ allowed = [
 configs = ["context7"]  # References ~/.claude-persona/mcp/context7.json
 
 [tools]
-allowed = ["Read", "Write", "Edit", "Bash", "Glob", "Grep"]
-# disallowed = ["Bash(rm -rf:*)"]
+allowed = ["Read", "Write", "Edit", "Bash", "WebSearch", "WebFetch"]
+# disallowed = ["Bash(rm:*)"]
 
 [permissions]
 mode = "default"  # default, acceptEdits, bypassPermissions, plan
@@ -129,11 +199,14 @@ On startup:
 1. Read coding guidelines at ~/projects/guidelines/ruby-style.md
 2. ...
 """
+
+# Optional: initial message triggers Claude to respond immediately on launch
+# initial_message = "Begin your analysis of the codebase..."
 ```
 
 ### MCP Format (JSON)
 
-Exported automatically via `claude-persona mcp export`. Format matches Claude's MCP config:
+Imported automatically via `claude-persona mcp import`. Format matches Claude's MCP config:
 
 ```json
 {
@@ -162,17 +235,20 @@ When launching a persona, claude-persona shows the configuration being used:
 
 ```
 
-When resuming a session:
+When resuming a session with vibe mode and auto-start:
 
 ```
-🔄 Resuming persona: rails-dev (session a1b2c3d4...)
-   Model: sonnet
+🔄 Resuming persona: assistant (session a1b2c3d4...)
+   Model: opus
    Directories:
-     - /Users/kelly/projects/kajabi
-   MCPs: context7
+     - /Users/kelly/projects
+   MCPs: google-calendar
    😎 Vibe mode
+   💬 Auto-start enabled
 
 ```
+
+The `😎 Vibe mode` indicator shows when `--vibe` is used. The `💬 Auto-start enabled` indicator shows when the persona has an `initial_message` configured.
 
 ## Session Summary
 
@@ -206,6 +282,23 @@ This passes `--dangerously-skip-permissions` to Claude. Use when you want Claude
 
 Note: This is a runtime flag, not a persona config option. The same persona can be launched with or without vibe mode depending on context.
 
+## Initial Message (Auto-Start)
+
+Personas can include an `initial_message` that triggers Claude to act immediately on launch, without waiting for you to type anything:
+
+```toml
+[prompt]
+system = "You are a personal assistant..."
+initial_message = "Check my calendar and summarize today's schedule."
+```
+
+When launched, Claude will immediately respond to the initial message. This is useful for:
+- **Personal assistants** that check calendar, tasks, or provide daily briefings
+- **Automation personas** that run checks or generate reports
+- **Research personas** that begin analyzing immediately
+
+The launch display shows `💬 Auto-start enabled` when this is configured.
+
 ## Dryrun Mode
 
 Preview the exact command without launching Claude:
@@ -226,6 +319,17 @@ claude \
   --permission-mode default
 ```
 
+When a persona has an `initial_message`, the dryrun shows the `--` separator:
+
+```
+# claude-persona v0.1.0
+claude \
+  --model opus \
+  --system-prompt "You are a personal assistant..." \
+  --add-dir /Users/kelly/projects \
+  -- "Check my calendar and summarize today's schedule."
+```
+
 Useful for:
 - Debugging persona configurations
 - Verifying MCP configs are resolved correctly
@@ -239,42 +343,24 @@ claude-persona rails-dev --vibe --resume abc123 --dry-run
 
 ## Troubleshooting
 
-### MCP export fails or produces incorrect config
+### MCP not showing in `mcp available`
 
-The `mcp export` command parses the text output of `claude mcp get`. If Claude CLI changes its output format in a future version, export may fail or produce incomplete configs.
+The `mcp available` command reads directly from Claude's config files:
+- User scope: `~/.claude.json`
+- Project scope: `.claude.json` in current directory
 
-**Workaround**: Manually create the MCP JSON file in `~/.claude-persona/mcp/`:
-
-```json
-{
-  "mcpServers": {
-    "your-mcp-name": {
-      "type": "http",
-      "url": "https://your-mcp-url.com/mcp"
-    }
-  }
-}
-```
-
-For stdio servers:
-```json
-{
-  "mcpServers": {
-    "your-mcp-name": {
-      "type": "stdio",
-      "command": "npx",
-      "args": ["-y", "@your/mcp-package"],
-      "env": {
-        "API_KEY": "${API_KEY}"
-      }
-    }
-  }
-}
-```
+If an MCP doesn't appear:
+1. Verify it's configured in Claude with `claude mcp list`
+2. Check you're in the correct directory for project-scoped MCPs
+3. Ensure the config file exists and contains valid JSON
 
 ### Session cost shows $0.0000
 
-Cost calculation reads Claude's session JSONL files. If the session file can't be found (e.g., due to symlink resolution on macOS), cost will show as zero. The session ID and resume command will still work.
+Cost calculation reads Claude's session JSONL files. Cost will show as zero if:
+- You exited without interacting (no API calls = no tokens used)
+- The session file couldn't be found (e.g., due to symlink resolution on macOS)
+
+The session ID and resume command will still work.
 
 ### Persona not found after generation
 
@@ -288,4 +374,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, testing, and contr
 
 ## License
 
-MIT
+[MIT](LICENSE)

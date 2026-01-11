@@ -86,9 +86,11 @@ module ClaudePersona
 
   struct PromptConfig
     getter system : String
+    getter initial_message : String
 
     def initialize(table : TOML::Table)
       @system = table["system"]?.try(&.as_s) || ""
+      @initial_message = table["initial_message"]?.try(&.as_s) || ""
     end
   end
 

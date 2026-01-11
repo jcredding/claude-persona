@@ -7,7 +7,7 @@ Thank you for your interest in contributing!
 ### Prerequisites
 
 - [Crystal](https://crystal-lang.org/install/) >= 1.0.0
-- [GitHub CLI](https://cli.github.com/) (for releases)
+- [GitHub CLI](https://cli.github.com/) (only needed for releases)
 
 ### Getting Started
 
@@ -86,9 +86,12 @@ claude-persona/
 │       └── generator_prompt.cr    # Persona generator prompt
 ├── spec/
 │   ├── spec_helper.cr
-│   ├── fixtures/                  # Test personas and MCPs
+│   ├── fixtures/
+│   │   ├── personas/              # Test persona TOML files
+│   │   ├── mcp/                   # Test imported MCP configs
+│   │   └── claude/                # Mock Claude config files
 │   ├── claude_persona/            # Unit specs
-│   └── integration/               # Dryrun integration specs
+│   └── integration/               # Integration specs
 ├── bin/
 │   ├── release                    # Release script
 │   └── release-add                # Add platform to release

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "project-mcp-sse": {
+      "type": "sse",
+      "url": "https://project.example.com/sse"
+    }
+  }
+}

@@ -1,0 +1,5 @@
+description = "References MCP that does not exist"
+model = "haiku"
+
+[mcp]
+configs = ["nonexistent-mcp"]

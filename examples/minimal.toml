@@ -1,0 +1,2 @@
+description = "Minimal example - just model selection"
+model = "sonnet"

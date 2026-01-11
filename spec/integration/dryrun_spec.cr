@@ -57,9 +57,29 @@ describe "dryrun integration" do
       output = run_generate_dryrun
 
       output.should contain("claude")
+      output.should contain("--model opus")
       output.should contain("--system-prompt")
       output.should contain("--add-dir")
-      output.should contain("--allowed-tools")
+      # Uses -- separator before initial message
+      output.should contain("--")
+      output.should contain("Greet the user")
+    end
+  end
+
+  describe "error handling" do
+    it "shows friendly error for missing MCP config" do
+      output, error = run_dryrun_with_error("test-missing-mcp")
+
+      error.should contain("MCP config 'nonexistent-mcp' not found")
+    end
+
+    it "lists personas gracefully when one has invalid TOML" do
+      output = run_list_command
+
+      output.should contain("test-invalid-toml")
+      output.should contain("error:")
+      # Should still list other valid personas
+      output.should contain("test-basic")
     end
   end
 end
@@ -77,6 +97,26 @@ end
 def run_generate_dryrun : String
   env = {"CLAUDE_PERSONA_CONFIG_DIR" => SPEC_FIXTURES.to_s}
   Process.run("build/claude-persona", ["generate", "--dry-run"], env: env, output: :pipe, error: :pipe) do |process|
+    process.output.gets_to_end
+  end
+end
+
+def run_dryrun_with_error(persona : String) : Tuple(String, String)
+  args = [persona, "--dry-run"]
+  env = {"CLAUDE_PERSONA_CONFIG_DIR" => SPEC_FIXTURES.to_s}
+
+  output = ""
+  error = ""
+  Process.run("build/claude-persona", args, env: env, output: :pipe, error: :pipe) do |process|
+    output = process.output.gets_to_end
+    error = process.error.gets_to_end
+  end
+  {output, error}
+end
+
+def run_list_command : String
+  env = {"CLAUDE_PERSONA_CONFIG_DIR" => SPEC_FIXTURES.to_s}
+  Process.run("build/claude-persona", ["list"], env: env, output: :pipe, error: :pipe) do |process|
     process.output.gets_to_end
   end
 end

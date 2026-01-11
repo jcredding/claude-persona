@@ -7,6 +7,7 @@ describe ClaudePersona::CLI do
       ClaudePersona::CLI::RESERVED_NAMES.should contain("generate")
       ClaudePersona::CLI::RESERVED_NAMES.should contain("show")
       ClaudePersona::CLI::RESERVED_NAMES.should contain("rename")
+      ClaudePersona::CLI::RESERVED_NAMES.should contain("remove")
       ClaudePersona::CLI::RESERVED_NAMES.should contain("mcp")
       ClaudePersona::CLI::RESERVED_NAMES.should contain("help")
       ClaudePersona::CLI::RESERVED_NAMES.should contain("version")

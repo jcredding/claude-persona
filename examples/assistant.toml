@@ -1,0 +1,14 @@
+description = "Personal assistant with calendar access"
+model = "opus"
+
+[mcp]
+configs = ["google-calendar"]
+
+[prompt]
+system = """
+You are a personal assistant helping manage daily tasks and schedule.
+
+Be concise and actionable in your responses.
+"""
+
+initial_message = "Check my calendar and summarize today's schedule."

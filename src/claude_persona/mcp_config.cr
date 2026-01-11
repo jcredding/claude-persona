@@ -2,7 +2,15 @@ require "json"
 
 module ClaudePersona
   module McpHandler
-    # Resolve MCP config names to full file paths
+    # Claude config file paths (with env var overrides for testing)
+    CLAUDE_USER_CONFIG_PATH = Path.new(
+      ENV.fetch("CLAUDE_USER_CONFIG_PATH", (Path.home / ".claude.json").to_s)
+    )
+    CLAUDE_PROJECT_CONFIG_PATH = Path.new(
+      ENV.fetch("CLAUDE_PROJECT_CONFIG_PATH", (Path[Dir.current] / ".claude.json").to_s)
+    )
+
+    # Resolve MCP config names to full file paths (for imported configs)
     def self.resolve_mcp_paths(config_names : Array(String)) : Array(String)
       config_names.map do |name|
         path = MCP_DIR / "#{name}.json"
@@ -13,7 +21,7 @@ module ClaudePersona
       end
     end
 
-    # List available MCP configs
+    # List imported MCP configs (in claude-persona's mcp directory)
     def self.list : Array(String)
       return [] of String unless Dir.exists?(MCP_DIR)
 
@@ -23,117 +31,122 @@ module ClaudePersona
         .sort
     end
 
-    # Export MCP config from Claude
-    def self.export(name : String) : Bool
-      # Run claude mcp get to check if it exists
-      output = `claude mcp get #{name} 2>&1`
+    # Get available MCPs from user-scope Claude config
+    def self.available_user_mcps : Hash(String, JSON::Any)
+      read_mcp_servers_from_file(CLAUDE_USER_CONFIG_PATH)
+    end
 
-      unless $?.success?
+    # Get available MCPs from project-scope Claude config
+    def self.available_project_mcps : Hash(String, JSON::Any)
+      read_mcp_servers_from_file(CLAUDE_PROJECT_CONFIG_PATH)
+    end
+
+    # Read mcpServers from a Claude config file
+    private def self.read_mcp_servers_from_file(path : Path) : Hash(String, JSON::Any)
+      return {} of String => JSON::Any unless File.exists?(path)
+
+      begin
+        data = JSON.parse(File.read(path))
+        if servers = data["mcpServers"]?
+          result = {} of String => JSON::Any
+          servers.as_h.each { |k, v| result[k] = v }
+          result
+        else
+          {} of String => JSON::Any
+        end
+      rescue
+        {} of String => JSON::Any
+      end
+    end
+
+    # Display available MCPs from both scopes
+    def self.display_available
+      user_mcps = available_user_mcps
+      project_mcps = available_project_mcps
+
+      puts "Available MCP servers to import:"
+      puts ""
+
+      # User scope
+      puts "User scope (#{CLAUDE_USER_CONFIG_PATH}):"
+      if user_mcps.empty?
+        puts "  (none available)"
+      else
+        user_mcps.each do |name, config|
+          type = config["type"]?.try(&.as_s) || "unknown"
+          puts "  #{name} (#{type})"
+        end
+      end
+
+      puts ""
+
+      # Project scope
+      puts "Project scope (#{CLAUDE_PROJECT_CONFIG_PATH}):"
+      if project_mcps.empty?
+        puts "  (none available)"
+      else
+        project_mcps.each do |name, config|
+          type = config["type"]?.try(&.as_s) || "unknown"
+          puts "  #{name} (#{type})"
+        end
+      end
+    end
+
+    # Import MCP config from Claude config files
+    def self.import(name : String) : Bool
+      # Check user scope first, then project scope
+      user_mcps = available_user_mcps
+      project_mcps = available_project_mcps
+
+      mcp_config = user_mcps[name]? || project_mcps[name]?
+
+      unless mcp_config
         STDERR.puts "Error: MCP '#{name}' not found in Claude config"
+        STDERR.puts ""
+        display_available
         return false
       end
 
-      # Parse the output to extract config
-      config = parse_claude_mcp_output(name, output)
+      # Build the import structure
+      import_data = {
+        "mcpServers" => JSON::Any.new({
+          name => mcp_config,
+        }),
+      }
 
       # Ensure directory exists
       Dir.mkdir_p(MCP_DIR)
 
       # Write JSON file
       path = MCP_DIR / "#{name}.json"
-      File.write(path, config.to_pretty_json)
+      File.write(path, import_data.to_pretty_json)
 
-      puts "Exported to #{path}"
+      type = mcp_config["type"]?.try(&.as_s) || "unknown"
+      puts "Imported #{name} (#{type}) to #{path}"
       true
     end
 
-    # Parse claude mcp get output into JSON structure
-    # NOTE: This parsing depends on the text output format of `claude mcp get`.
-    # If Claude CLI changes its output format, this may need to be updated.
-    # A future version of Claude CLI may support `--json` output which would be more reliable.
-    private def self.parse_claude_mcp_output(name : String, output : String) : Hash(String, JSON::Any)
-      lines = output.lines.map(&.strip)
+    # Import all MCPs from Claude config files
+    def self.import_all : Int32
+      user_mcps = available_user_mcps
+      project_mcps = available_project_mcps
 
-      type = ""
-      url = ""
-      command = ""
-      args = [] of String
-      env = {} of String => String
-      in_env_section = false
+      # Merge, with user scope taking precedence
+      all_mcps = project_mcps.merge(user_mcps)
 
-      lines.each do |line|
-        # Check if we're entering or in the Env section
-        if line =~ /^Env:\s*$/i
-          in_env_section = true
-          next
-        end
+      if all_mcps.empty?
+        puts "No MCP servers found in Claude config."
+        return 0
+      end
 
-        # If in env section, parse key=value or key: value pairs (indented)
-        if in_env_section
-          if line =~ /^\s+(\w+)[=:]\s*(.+)$/
-            env[$1] = $2
-            next
-          elsif line =~ /^[A-Z]/i && !line.starts_with?(" ")
-            # Non-indented line starting with letter = new section, exit env parsing
-            in_env_section = false
-          end
-        end
-
-        case line
-        when /^Type:\s*(\w+)/i
-          type = $1.downcase
-        when /^URL:\s*(.+)/i
-          url = $1
-        when /^Command:\s*(.+)/i
-          command = $1
-        when /^Args:\s*(.+)/i
-          args = $1.split(/\s+/)
-        when /^Env:\s+(\w+)[=:]\s*(.+)$/i
-          # Single-line env format: Env: KEY=value
-          env[$1] = $2
+      imported = 0
+      all_mcps.each_key do |name|
+        if import(name)
+          imported += 1
         end
       end
 
-      server_config = {} of String => JSON::Any
-      server_config["type"] = JSON::Any.new(type)
-
-      case type
-      when "http", "sse"
-        server_config["url"] = JSON::Any.new(url)
-      when "stdio"
-        server_config["command"] = JSON::Any.new(command)
-        server_config["args"] = JSON::Any.new(args.map { |a| JSON::Any.new(a) })
-        unless env.empty?
-          env_json = {} of String => JSON::Any
-          env.each { |k, v| env_json[k] = JSON::Any.new(v) }
-          server_config["env"] = JSON::Any.new(env_json)
-        end
-      end
-
-      {
-        "mcpServers" => JSON::Any.new({
-          name => JSON::Any.new(server_config),
-        }),
-      }
-    end
-
-    # Export all MCPs from Claude
-    def self.export_all : Int32
-      output = `claude mcp list 2>&1`
-
-      # Parse server names from output
-      names = output.lines
-        .select { |l| l.includes?(":") && !l.starts_with?("Checking") }
-        .map { |l| l.split(":").first.strip }
-
-      exported = 0
-      names.each do |name|
-        if export(name)
-          exported += 1
-        end
-      end
-
-      exported
+      imported
     end
   end
 end

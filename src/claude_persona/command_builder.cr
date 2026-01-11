@@ -1,13 +1,26 @@
 module ClaudePersona
   class CommandBuilder
     getter args : Array(String)
+    getter initial_message : String?
 
-    def initialize(@config : PersonaConfig, @resume_session_id : String? = nil, @vibe : Bool = false)
+    def initialize(
+      @config : PersonaConfig,
+      resume_session_id : String? = nil,
+      session_id : String? = nil,
+      vibe : Bool = false,
+      initial_message : String? = nil,
+    )
+      @resume_session_id = resume_session_id
+      @session_id = session_id
+      @vibe = vibe
       @args = [] of String
+
+      # Use provided initial_message, or fall back to config's initial_message
+      @initial_message = initial_message || @config.prompt.try(&.initial_message).try { |m| m.empty? ? nil : m }
     end
 
     def build : Array(String)
-      add_resume
+      add_resume_or_session
       add_model
       add_system_prompt
       add_directories
@@ -15,13 +28,16 @@ module ClaudePersona
       add_mcp_configs
       add_permission_mode
       add_vibe_mode
+      add_initial_message
 
       @args
     end
 
-    private def add_resume
+    private def add_resume_or_session
       if session_id = @resume_session_id
         @args << "--resume" << session_id
+      elsif session_id = @session_id
+        @args << "--session-id" << session_id
       end
     end
 
@@ -85,6 +101,12 @@ module ClaudePersona
       end
     end
 
+    private def add_initial_message
+      if msg = @initial_message
+        @args << "--" << msg
+      end
+    end
+
     # Format command for dryrun output
     def format_command : String
       build if @args.empty?
@@ -95,8 +117,14 @@ module ClaudePersona
       i = 0
       while i < @args.size
         arg = @args[i]
+
+        # Skip the -- separator and initial_message (handled separately)
+        if arg == "--"
+          break
+        end
+
         if arg.starts_with?("--")
-          # Collect all values until next flag
+          # Collect all values until next flag or end of flags
           values = [] of String
           j = i + 1
           while j < @args.size && !@args[j].starts_with?("--")
@@ -130,8 +158,18 @@ module ClaudePersona
         end
       end
 
-      # Remove trailing backslash from last line
-      lines[-1] = lines[-1].rchop(" \\")
+      # Add initial_message with -- separator if present
+      if msg = @initial_message
+        display_msg = if msg.size > 60
+                        "\"#{msg[0, 57]}...\""
+                      else
+                        "\"#{msg}\""
+                      end
+        lines << "  -- #{display_msg}"
+      else
+        # Remove trailing backslash from last line when no initial_message
+        lines[-1] = lines[-1].rchop(" \\")
+      end
 
       lines.join("\n")
     end

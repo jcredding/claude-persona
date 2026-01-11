@@ -3,7 +3,10 @@ require "option_parser"
 module ClaudePersona
   class CLI
     # Subcommand names that cannot be used as persona names
-    RESERVED_NAMES = %w[list generate show rename mcp help version]
+    RESERVED_NAMES = %w[list generate show rename remove mcp help version]
+
+    # Model used for the persona generator
+    GENERATOR_MODEL = "opus"
 
     def self.run(args : Array(String))
       # Flag state
@@ -46,7 +49,7 @@ module ClaudePersona
       end
 
       if show_version_flag
-        puts "claude-persona #{VERSION}"
+        puts VERSION
         return
       end
 
@@ -69,12 +72,14 @@ module ClaudePersona
         show_persona(rest.first?)
       when "rename"
         rename_persona(rest[0]?, rest[1]?)
+      when "remove"
+        remove_persona(rest.first?)
       when "mcp"
         handle_mcp_command(rest)
       when "help"
         puts parser
       when "version"
-        puts "claude-persona #{VERSION}"
+        puts VERSION
       else
         # Assume it's a persona name, validate and launch
         validate_and_launch_persona(command, resume_id, vibe, dryrun)
@@ -94,11 +99,15 @@ module ClaudePersona
         generate                Create new persona interactively
         show <persona>          Display persona configuration
         rename <old> <new>      Rename a persona
-        mcp list                List exported MCP configs
-        mcp export <name>       Export MCP config from Claude
-        mcp export-all          Export all MCPs from Claude
-        mcp show <name>         Display MCP config JSON
-        mcp remove <name>       Delete MCP config file
+        remove <persona>        Delete a persona
+        mcp available           List MCPs available to import
+        mcp list                List imported MCP configs
+        mcp import <name>       Import MCP config from Claude
+        mcp import-all          Import all MCPs from Claude
+        mcp show <name>         Display imported MCP config
+        mcp remove <name>       Delete imported MCP config
+        help                    Show this help
+        version                 Show version
       BANNER
     end
 
@@ -110,10 +119,11 @@ module ClaudePersona
       unless File.exists?(path)
         STDERR.puts "Error: Unknown persona '#{name}'"
         STDERR.puts ""
-        STDERR.puts "Available commands:"
+        display_available_personas
+        STDERR.puts ""
+        STDERR.puts "Commands:"
         STDERR.puts "  claude-persona list       List available personas"
         STDERR.puts "  claude-persona generate   Create a new persona"
-        STDERR.puts "  claude-persona --help     Show all commands"
         exit(1)
       end
 
@@ -121,7 +131,7 @@ module ClaudePersona
         config = PersonaConfig.load(name)
 
         if dryrun
-          builder = CommandBuilder.new(config, resume_id, vibe)
+          builder = CommandBuilder.new(config, resume_session_id: resume_id, vibe: vibe)
           puts builder.format_command
           return
         end
@@ -138,10 +148,7 @@ module ClaudePersona
     private def self.list_personas
       ensure_config_dirs
 
-      personas = Dir.children(PERSONAS_DIR)
-        .select { |f| f.ends_with?(".toml") }
-        .map { |f| f.chomp(".toml") }
-        .sort
+      personas = get_persona_names
 
       if personas.empty?
         puts "No personas found. Create one with: claude-persona generate"
@@ -152,16 +159,27 @@ module ClaudePersona
       puts ""
 
       personas.each do |name|
-        config = PersonaConfig.load(name)
-        puts "  #{name}"
-        unless config.description.empty?
-          puts "    #{config.description}"
-        end
-        puts "    Model: #{config.model}"
-        if mcp = config.mcp
-          unless mcp.configs.empty?
-            puts "    MCPs: #{mcp.configs.join(", ")}"
+        path = PERSONAS_DIR / "#{name}.toml"
+        begin
+          config = PersonaConfig.load(name)
+          puts "  #{name}"
+          unless config.description.empty?
+            puts "    #{config.description}"
           end
+          puts "    Model: #{config.model}"
+          if mcp = config.mcp
+            unless mcp.configs.empty?
+              puts "    MCPs: #{mcp.configs.join(", ")}"
+            end
+          end
+          if perms = config.permissions
+            puts "    Permission mode: #{perms.mode}"
+          end
+          puts "    Path: #{path}"
+        rescue e
+          puts "  #{name}"
+          puts "    (error: #{e.message})"
+          puts "    Path: #{path}"
         end
         puts ""
       end
@@ -170,23 +188,34 @@ module ClaudePersona
     private def self.generate_persona(dryrun : Bool = false)
       ensure_config_dirs
 
-      generator_prompt = ClaudePersona.build_generator_prompt
+      system_prompt = ClaudePersona.build_generator_system_prompt
+      initial_message = ClaudePersona.build_generator_initial_message
+
+      allowed_tools = ["Read", "Write", "Glob", "AskUserQuestion"]
 
       args = [
-        "--system-prompt", generator_prompt,
+        "--model", GENERATOR_MODEL,
+        "--system-prompt", system_prompt,
         "--add-dir", PERSONAS_DIR.to_s,
         "--add-dir", MCP_DIR.to_s,
-        "--allowed-tools", "Read", "Write", "Glob", "AskUserQuestion",
+        "--allowed-tools", allowed_tools.join(","),
+        "--", # Separates flags from positional argument
+        initial_message,
       ]
 
       if dryrun
-        puts format_generate_command(args)
+        puts format_generate_command(args, initial_message)
         return
       end
 
-      puts "━━━ Claude Persona Generator ━━━"
-      puts "Launching Claude to help you create a new persona..."
-      puts "Claude will interview you and confirm the persona name before saving."
+      puts "✨ Claude Persona Generator"
+      puts "   Model: #{GENERATOR_MODEL}"
+      puts "   Directories:"
+      puts "     - #{PERSONAS_DIR}"
+      puts "     - #{MCP_DIR}"
+      puts "   Allowed tools: #{allowed_tools.join(", ")}"
+      puts ""
+      puts "   Claude will interview you and create a new persona config."
       puts ""
 
       Process.run("claude",
@@ -197,13 +226,19 @@ module ClaudePersona
       )
     end
 
-    private def self.format_generate_command(args : Array(String)) : String
+    private def self.format_generate_command(args : Array(String), initial_message : String? = nil) : String
       lines = ["# claude-persona v#{VERSION}", "claude \\"]
 
       # Group args into flag + value(s) for readable output
       i = 0
       while i < args.size
         arg = args[i]
+
+        # Skip the -- separator and initial_message (handled separately)
+        if arg == "--"
+          break
+        end
+
         if arg.starts_with?("--")
           # Collect all values until next flag
           values = [] of String
@@ -234,19 +269,34 @@ module ClaudePersona
         end
       end
 
-      lines[-1] = lines[-1].rchop(" \\")
+      # Add initial message with -- separator if present
+      if msg = initial_message
+        display_msg = if msg.size > 60
+                        "\"#{msg[0, 57]}...\""
+                      else
+                        "\"#{msg}\""
+                      end
+        lines << "  -- #{display_msg}"
+      else
+        lines[-1] = lines[-1].rchop(" \\")
+      end
+
       lines.join("\n")
     end
 
     private def self.show_persona(name : String?)
       unless name
         STDERR.puts "Usage: claude-persona show <persona>"
+        STDERR.puts ""
+        display_available_personas
         exit(1)
       end
 
       path = PERSONAS_DIR / "#{name}.toml"
       unless File.exists?(path)
         STDERR.puts "Error: Persona '#{name}' not found"
+        STDERR.puts ""
+        display_available_personas
         exit(1)
       end
 
@@ -256,6 +306,8 @@ module ClaudePersona
     private def self.rename_persona(old_name : String?, new_name : String?)
       unless old_name && new_name
         STDERR.puts "Usage: claude-persona rename <old-name> <new-name>"
+        STDERR.puts ""
+        display_available_personas
         exit(1)
       end
 
@@ -263,6 +315,8 @@ module ClaudePersona
       old_path = PERSONAS_DIR / "#{old_name}.toml"
       unless File.exists?(old_path)
         STDERR.puts "Error: Persona '#{old_name}' not found"
+        STDERR.puts ""
+        display_available_personas
         exit(1)
       end
 
@@ -292,6 +346,28 @@ module ClaudePersona
       puts "  #{new_path}"
     end
 
+    private def self.remove_persona(name : String?)
+      unless name
+        STDERR.puts "Usage: claude-persona remove <persona>"
+        STDERR.puts ""
+        display_available_personas
+        exit(1)
+      end
+
+      path = PERSONAS_DIR / "#{name}.toml"
+      unless File.exists?(path)
+        STDERR.puts "Error: Persona '#{name}' not found"
+        STDERR.puts ""
+        display_available_personas
+        exit(1)
+      end
+
+      return unless confirm?("Remove persona '#{name}'?")
+
+      File.delete(path)
+      puts "Removed #{path}"
+    end
+
     private def self.handle_mcp_command(args : Array(String))
       if args.empty?
         show_mcp_help
@@ -302,12 +378,14 @@ module ClaudePersona
       rest = args[1..]? || [] of String
 
       case subcommand
+      when "available"
+        McpHandler.display_available
       when "list"
         list_mcps
-      when "export"
-        export_mcp(rest.first?)
-      when "export-all"
-        export_all_mcps
+      when "import"
+        import_mcp(rest.first?)
+      when "import-all"
+        import_all_mcps
       when "show"
         show_mcp(rest.first?)
       when "remove"
@@ -322,53 +400,87 @@ module ClaudePersona
 
       if mcps.empty?
         puts "No MCP configs found."
-        puts "Export from Claude with: claude-persona mcp export <name>"
+        puts "See available: claude-persona mcp available"
+        puts "Import with:   claude-persona mcp import <name>"
         return
       end
 
-      puts "Available MCP configs:"
-      mcps.each { |name| puts "  #{name}" }
+      puts "MCP configs:"
+      mcps.each do |name|
+        type = get_mcp_type(name)
+        path = MCP_DIR / "#{name}.json"
+        puts "  #{name} (#{type}): #{path}"
+      end
     end
 
-    private def self.export_mcp(name : String?)
+    private def self.get_mcp_type(name : String) : String
+      path = MCP_DIR / "#{name}.json"
+      return "unknown" unless File.exists?(path)
+
+      begin
+        data = JSON.parse(File.read(path))
+        if servers = data["mcpServers"]?
+          if server = servers[name]?
+            return server["type"]?.try(&.as_s) || "unknown"
+          end
+        end
+      rescue
+      end
+      "unknown"
+    end
+
+    private def self.display_imported_mcps
+      mcps = McpHandler.list
+      if mcps.empty?
+        STDERR.puts "No imported MCP configs."
+      else
+        STDERR.puts "Imported MCP configs:"
+        mcps.each do |name|
+          type = get_mcp_type(name)
+          STDERR.puts "  #{name} (#{type})"
+        end
+      end
+    end
+
+    private def self.import_mcp(name : String?)
       unless name
-        STDERR.puts "Usage: claude-persona mcp export <name>"
+        STDERR.puts "Usage: claude-persona mcp import <name>"
+        STDERR.puts ""
+        McpHandler.display_available
         exit(1)
       end
 
       ensure_config_dirs
 
-      puts "Checking Claude MCP config for '#{name}'..."
-
-      unless McpHandler.export(name)
+      unless McpHandler.import(name)
         exit(1)
       end
     end
 
-    private def self.export_all_mcps
+    private def self.import_all_mcps
       ensure_config_dirs
 
-      puts "Checking Claude MCP configs..."
-
-      count = McpHandler.export_all
+      count = McpHandler.import_all
 
       if count > 0
         puts ""
-        puts "Done. Exported #{count} MCP config(s)."
-      else
-        puts "No MCP configs found in Claude."
+        puts "Imported #{count} MCP config(s)."
       end
     end
 
     private def self.show_mcp(name : String?)
       unless name
         STDERR.puts "Usage: claude-persona mcp show <name>"
+        STDERR.puts ""
+        display_imported_mcps
         exit(1)
       end
 
       path = MCP_DIR / "#{name}.json"
       unless File.exists?(path)
         STDERR.puts "Error: MCP config '#{name}' not found"
+        STDERR.puts ""
+        display_imported_mcps
         exit(1)
       end
 
@@ -378,17 +490,42 @@ module ClaudePersona
     private def self.remove_mcp(name : String?)
       unless name
         STDERR.puts "Usage: claude-persona mcp remove <name>"
+        STDERR.puts ""
+        display_imported_mcps
         exit(1)
       end
 
       path = MCP_DIR / "#{name}.json"
       unless File.exists?(path)
         STDERR.puts "Error: MCP config '#{name}' not found"
+        STDERR.puts ""
+        display_imported_mcps
         exit(1)
       end
 
+      return unless confirm?("Remove MCP config '#{name}'?")
+
       File.delete(path)
       puts "Removed #{path}"
+    end
+
+    private def self.get_persona_names : Array(String)
+      return [] of String unless Dir.exists?(PERSONAS_DIR)
+
+      Dir.children(PERSONAS_DIR)
+        .select { |f| f.ends_with?(".toml") }
+        .map { |f| f.chomp(".toml") }
+        .sort
+    end
+
+    private def self.display_available_personas
+      personas = get_persona_names
+      if personas.empty?
+        STDERR.puts "No personas found."
+      else
+        STDERR.puts "Available personas:"
+        personas.each { |p| STDERR.puts "  #{p}" }
+      end
     end
 
     private def self.ensure_config_dirs
@@ -396,16 +533,24 @@ module ClaudePersona
       Dir.mkdir_p(MCP_DIR)
     end
 
+    private def self.confirm?(message : String) : Bool
+      print "#{message} [Yn] "
+      response = gets
+      return true if response.nil? || response.empty? || response.downcase.starts_with?("y")
+      false
+    end
+
     private def self.show_mcp_help
       puts <<-HELP
       claude-persona mcp - Manage MCP configurations
 
       Usage:
-        claude-persona mcp list               List exported MCP configs
-        claude-persona mcp export <name>      Export MCP config from Claude
-        claude-persona mcp export-all         Export all MCPs from Claude
-        claude-persona mcp show <name>        Display MCP config JSON
-        claude-persona mcp remove <name>      Delete MCP config file
+        claude-persona mcp available          List MCPs available to import
+        claude-persona mcp list               List imported MCP configs
+        claude-persona mcp import <name>      Import MCP config from Claude
+        claude-persona mcp import-all         Import all MCPs from Claude
+        claude-persona mcp show <name>        Display imported MCP config
+        claude-persona mcp remove <name>      Delete imported MCP config
       HELP
     end
   end

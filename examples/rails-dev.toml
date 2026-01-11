@@ -1,0 +1,24 @@
+description = "Ruby on Rails developer"
+model = "sonnet"
+
+[directories]
+allowed = ["~/projects/myapp"]
+
+[mcp]
+configs = ["context7"]
+
+[tools]
+allowed = ["Read", "Write", "Edit", "Bash", "Glob", "Grep"]
+
+[permissions]
+mode = "default"
+
+[prompt]
+system = """
+You are a Ruby on Rails expert focused on clean, maintainable code.
+
+Follow these conventions:
+- Use service objects for complex business logic
+- Write thorough RSpec tests
+- Prefer composition over inheritance
+"""

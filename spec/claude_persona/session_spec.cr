@@ -1,6 +1,29 @@
 require "../spec_helper"
 
 describe ClaudePersona::Session do
+  describe "#round_cost_up" do
+    it "rounds up to nearest cent" do
+      round_cost_up(1.1404).should eq(1.15)
+      round_cost_up(0.001).should eq(0.01)
+      round_cost_up(0.999).should eq(1.0)
+    end
+
+    it "keeps exact cents unchanged" do
+      round_cost_up(1.15).should eq(1.15)
+      round_cost_up(0.50).should eq(0.50)
+      round_cost_up(10.00).should eq(10.00)
+    end
+
+    it "handles zero" do
+      round_cost_up(0.0).should eq(0.0)
+    end
+
+    it "rounds up even tiny fractions" do
+      round_cost_up(0.0001).should eq(0.01)
+      round_cost_up(1.0001).should eq(1.01)
+    end
+  end
+
   describe "#format_duration" do
     it "formats seconds only" do
       duration = Time::Span.new(seconds: 45)
@@ -28,7 +51,11 @@ describe ClaudePersona::Session do
   end
 end
 
-# Extract format_duration for testing (or make it a module method)
+# Extract helpers for testing
+def round_cost_up(cost : Float64) : Float64
+  (cost * 100).ceil / 100.0
+end
+
 def format_duration(duration : Time::Span) : String
   total_seconds = duration.total_seconds.to_i
   hours = total_seconds // 3600

@@ -1,4 +1,5 @@
 require "json"
+require "uuid"
 
 module ClaudePersona
   class Session
@@ -7,14 +8,17 @@ module ClaudePersona
     getter start_time : Time
     getter end_time : Time?
     getter resume_session_id : String?
+    getter session_id : String
     getter vibe : Bool
 
     def initialize(@persona_name : String, @config : PersonaConfig, @resume_session_id : String? = nil, @vibe : Bool = false)
-      @start_time = Time.utc
+      @start_time = Time.local
+      # Use resume session ID if resuming, otherwise generate new UUID
+      @session_id = @resume_session_id || UUID.random.to_s
     end
 
     def run : Int32
-      args = CommandBuilder.new(@config, @resume_session_id, @vibe).build
+      args = CommandBuilder.new(@config, @resume_session_id, @session_id, @vibe).build
 
       display_launch_info
 
@@ -26,7 +30,7 @@ module ClaudePersona
         error: Process::Redirect::Inherit
       )
 
-      @end_time = Time.utc
+      @end_time = Time.local
 
       # Display session summary
       display_summary
@@ -47,16 +51,14 @@ module ClaudePersona
       puts "Model:    #{@config.model}"
       puts "Runtime:  #{format_duration(duration)}"
 
-      # Try to calculate cost from session files
-      if cost_info = calculate_session_cost
-        puts "Cost:     $#{sprintf("%.4f", cost_info[:cost])}"
-        if session_id = cost_info[:session_id]
-          puts "Session:  #{session_id}"
-          puts ""
-          vibe_flag = @vibe ? " --vibe" : ""
-          puts "Resume:   claude-persona #{@persona_name} --resume #{session_id}#{vibe_flag}"
-        end
-      end
+      # Calculate cost from session file (round up to nearest cent)
+      cost = calculate_session_cost
+      rounded_cost = (cost * 100).ceil / 100.0
+      puts "Cost:     $#{sprintf("%.2f", rounded_cost)}"
+      puts "Session:  #{@session_id}"
+      puts ""
+      vibe_flag = @vibe ? " --vibe" : ""
+      puts "Resume:   claude-persona #{@persona_name} --resume #{@session_id}#{vibe_flag}"
 
       puts "=================================================="
     end
@@ -113,6 +115,13 @@ module ClaudePersona
         puts "   😎 Vibe mode"
       end
 
+      # Display auto-start indicator
+      if prompt = @config.prompt
+        unless prompt.initial_message.empty?
+          puts "   💬 Auto-start enabled"
+        end
+      end
+
       puts ""
     end
 
@@ -131,35 +140,25 @@ module ClaudePersona
       end
     end
 
-    private def calculate_session_cost : NamedTuple(cost: Float64, session_id: String?)?
-      # Find the most recent session JSONL file
+    private def calculate_session_cost : Float64
+      # Find the session JSONL file using our known session ID
       projects_dir = Path.home / ".claude" / "projects"
-      return nil unless Dir.exists?(projects_dir)
+      return 0.0 unless Dir.exists?(projects_dir)
 
       # Get the current working directory's project folder
       # Must resolve symlinks first (e.g., /tmp -> /private/tmp on macOS)
+      # Claude encodes paths by replacing / and . with - (keeping leading dash)
       real_cwd = File.realpath(Dir.current)
-      cwd_encoded = real_cwd.gsub("/", "-").lstrip('-')
+      cwd_encoded = real_cwd.gsub(/[\/.]/, "-")
       project_dir = projects_dir / cwd_encoded
-      return nil unless Dir.exists?(project_dir)
+      return 0.0 unless Dir.exists?(project_dir)
 
-      # Find most recent .jsonl file modified during our session
-      # Filter out agent-*.jsonl files (sub-agent sessions)
-      session_file = Dir.children(project_dir)
-        .select { |f| f.ends_with?(".jsonl") && !f.starts_with?("agent-") }
-        .map { |f| project_dir / f }
-        .select { |p| File.info(p).modification_time >= @start_time }
-        .max_by? { |p| File.info(p).modification_time }
-
-      return nil unless session_file
-
-      # Extract session ID from filename (UUID.jsonl)
-      session_id = File.basename(session_file.to_s, ".jsonl")
+      # Look for the session file with our known session ID
+      session_file = project_dir / "#{@session_id}.jsonl"
+      return 0.0 unless File.exists?(session_file)
 
       # Parse JSONL and sum token costs
-      cost = calculate_cost_from_jsonl(session_file)
-
-      {cost: cost, session_id: session_id}
+      calculate_cost_from_jsonl(session_file)
     end
 
     private def calculate_cost_from_jsonl(path : Path) : Float64

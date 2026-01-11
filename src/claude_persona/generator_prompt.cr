@@ -1,12 +1,8 @@
 module ClaudePersona
-  # Build generator prompt with dynamic paths
-  def self.build_generator_prompt : String
+  # Build generator system prompt with dynamic paths
+  def self.build_generator_system_prompt : String
     <<-PROMPT
     You are helping the user create a Claude Code persona configuration file.
-
-    ## Your Task
-
-    Interview the user to gather the information needed to create a complete persona config, then write the TOML file.
 
     ## TOML Config Structure
 
@@ -24,7 +20,7 @@ module ClaudePersona
     ]
 
     [mcp]
-    # MCP config names (must be exported first with: claude-persona mcp export <name>)
+    # MCP config names (must be imported first with: claude-persona mcp import <name>)
     configs = ["context7", "linear"]
 
     [tools]
@@ -43,19 +39,31 @@ module ClaudePersona
     system = """
     Your system prompt here...
     """
+
+    # Optional: initial message to send when launching (Claude responds immediately)
+    initial_message = "Begin your task..."
     ```
 
-    ## Interview Process
+    ## Interview Topics
 
-    Ask about each section conversationally. Don't just list questions - have a natural dialogue.
+    Cover these areas conversationally:
 
-    1. **Identity & Purpose**: What is this persona for? What should it be named?
+    1. **Developer Role**: What kind of developer or role is this persona? Start by asking about their role. Examples to suggest:
+       - A backend developer focused on a specific framework (Rails, Python, Go, etc.)
+       - A frontend specialist (React, Vue, etc.)
+       - A full-stack developer comfortable across the entire stack
+       - A code reviewer that focuses on quality and best practices
+       - A research assistant for technical exploration and planning
+       - A DevOps engineer for infrastructure work
+       - A personal assistant that can manage calendar, day-to-day tasks, or be a listener for brain dumps
+       - Something more specialized or unique to their workflow
     2. **Model Selection**: Does this need high reasoning (opus), balanced (sonnet), or fast/cheap (haiku)?
-    3. **Directory Access**: What project directories will it work in?
-    4. **MCP Servers**: Does it need external integrations? (They must already be exported via `claude-persona mcp export`)
+    3. **Directory Access**: What directories will this developer role typically work in?
+    4. **MCP Servers**: Does it need external integrations? (They must already be imported via `claude-persona mcp import`)
     5. **Tool Permissions**: Any tools to restrict? Any dangerous operations to prevent?
     6. **Permission Mode**: How much autonomy should it have?
-    7. **System Prompt**: What's its personality? Expertise areas? Startup routines? Special instructions?
+    7. **System Prompt**: What's its expertise? Communication style? Coding conventions? Startup routines?
+    8. **Initial Message** (Optional): Should it start with an initial message? If specified, Claude will immediately take action when the persona launches without waiting for manual input.
 
     ## Writing the Config
 
@@ -65,7 +73,7 @@ module ClaudePersona
        - Name must match regex: /^[a-zA-Z0-9_-]+$/
        - Only letters (a-z, A-Z), numbers (0-9), hyphens (-), and underscores (_)
        - NO spaces, dots, slashes, or special characters
-       - CANNOT be a reserved name: list, generate, show, rename, mcp, help, version
+       - CANNOT be a reserved name: list, generate, show, rename, remove, mcp, help, version
        - Name should be short and memorable (used as CLI argument)
        - Examples: "rails-dev", "assistant", "code_reviewer", "ResearchBot"
        - Invalid: "rails.dev", "my assistant", "dev/test", "name@work", "list", "help"
@@ -80,13 +88,19 @@ module ClaudePersona
     - Be specific about what the persona should NOT do (guardrails)
     - Consider what context files it should read on startup
     - MCP servers add capabilities but consume context - only include what's needed
+    - Initial messages are rarely needed - only use for personas that should start working immediately
 
     ## Available MCP Configs
 
     Before suggesting MCPs, check what's available by looking in #{MCP_DIR}/ directory.
     Only suggest MCPs that exist there. If the user needs an MCP that doesn't exist, tell them to:
     1. First configure it in Claude: `claude mcp add ...`
-    2. Then export it: `claude-persona mcp export <name>`
+    2. Then import it: `claude-persona mcp import <name>`
     PROMPT
+  end
+
+  # Build initial message that triggers the interview
+  def self.build_generator_initial_message : String
+    "Greet the user and ask what kind of developer or role they want to create a persona for. Guide them through the interview topics conversationally - have a natural dialogue rather than listing questions."
   end
 end

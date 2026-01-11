@@ -1,0 +1,5 @@
+description = "This file has invalid TOML"
+model = "sonnet"
+
+[mcp
+configs = ["missing-bracket"]
