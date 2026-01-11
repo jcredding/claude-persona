@@ -95,6 +95,9 @@ claude-persona/
 ├── bin/
 │   ├── release                    # Release script
 │   └── release-add                # Add platform to release
+├── completions/
+│   └── claude-persona.bash        # Bash completion script
+├── examples/                      # Example persona configs
 ├── build/                         # Compiled binaries (gitignored)
 ├── releases/                      # Release tarballs (gitignored)
 ├── shard.yml                      # Dependencies

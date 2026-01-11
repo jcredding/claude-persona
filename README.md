@@ -341,6 +341,57 @@ Works with all flags:
 claude-persona rails-dev --vibe --resume abc123 --dry-run
 ```
 
+## Bash Completion
+
+A bash completion script is included for tab-completing commands, flags, persona names, and MCP names.
+
+### Installation
+
+Source the script in your shell profile (e.g., `~/.bashrc` or `~/.bash_profile`):
+
+```bash
+source /path/to/claude-persona/completions/claude-persona.bash
+```
+
+Or copy to a bash-completion directory:
+
+```bash
+# Linux
+cp completions/claude-persona.bash /etc/bash_completion.d/claude-persona
+
+# macOS with Homebrew
+cp completions/claude-persona.bash /usr/local/etc/bash_completion.d/claude-persona
+```
+
+### Usage
+
+Once installed, tab completion works for:
+
+- **Commands**: `claude-persona <TAB>` shows `list`, `generate`, `show`, `mcp`, etc.
+- **Persona names**: `claude-persona show <TAB>` lists your personas
+- **MCP subcommands**: `claude-persona mcp <TAB>` shows `available`, `import`, `list`, etc.
+- **MCP names**: `claude-persona mcp show <TAB>` lists your imported MCPs
+- **Flags**: `claude-persona --<TAB>` shows `--vibe`, `--dry-run`, `--resume`, etc.
+
+### Using with Aliases
+
+If you alias `claude-persona` to something shorter, add completion for your alias:
+
+```bash
+alias persona='claude-persona'
+complete -F _claude_persona persona
+```
+
+Now `persona <TAB>` works just like `claude-persona <TAB>`.
+
+### Creating Completions for Other Shells
+
+The completion script in `completions/claude-persona.bash` can serve as a template for creating completions for other shells (zsh, fish). The key patterns:
+
+- Dynamically fetch persona names via `claude-persona list`
+- Dynamically fetch MCP names via `claude-persona mcp list` and `claude-persona mcp available`
+- No hardcoded paths - all lookups use the CLI itself
+
 ## Troubleshooting
 
 ### MCP not showing in `mcp available`
