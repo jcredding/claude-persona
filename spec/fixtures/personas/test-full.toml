@@ -1,10 +1,11 @@
+version = "0.1.1"
 description = "Full featured test persona"
 model = "opus"
 
 [directories]
 allowed = [
-    "~/projects/test",
-    "~/documents",
+  "~/projects/test",
+  "~/documents",
 ]
 
 [mcp]

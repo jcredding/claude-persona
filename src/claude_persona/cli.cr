@@ -135,6 +135,9 @@ module ClaudePersona
       begin
         config = PersonaConfig.load(name)
 
+        # Check for and perform upgrade if needed
+        config = maybe_upgrade_persona(name, config, path)
+
         if dryrun
           builder = CommandBuilder.new(config, resume_session_id: resume_id, vibe: vibe)
           puts builder.format_command
@@ -147,6 +150,29 @@ module ClaudePersona
       rescue e : ConfigError
         STDERR.puts "Error: #{e.message}"
         exit(1)
+      end
+    end
+
+    # Check if persona needs upgrade and perform it
+    private def self.maybe_upgrade_persona(name : String, config : PersonaConfig, path : Path) : PersonaConfig
+      return config unless Migrator.needs_upgrade?(config)
+
+      old_version = Migrator.effective_version(config)
+      result = Migrator.upgrade(name, config, path)
+
+      case result
+      when Migrator::Result::Upgraded
+        puts "Upgraded persona '#{name}' (#{old_version} -> #{VERSION})"
+        # Reload config after upgrade
+        PersonaConfig.load(name)
+      when Migrator::Result::ReadOnly
+        STDERR.puts "Warning: Persona '#{name}' is outdated (#{old_version}) but file is read-only"
+        config
+      when Migrator::Result::Failed
+        STDERR.puts "Warning: Failed to upgrade persona '#{name}' (#{old_version} -> #{VERSION})"
+        config
+      else
+        config
       end
     end
 
@@ -167,7 +193,19 @@ module ClaudePersona
         path = PERSONAS_DIR / "#{name}.toml"
         begin
           config = PersonaConfig.load(name)
-          puts "  #{name}"
+
+          # Show version status indicator
+          version_display = if version = config.version
+                              if Migrator.needs_upgrade?(config)
+                                "v#{version} -> v#{VERSION}" # Outdated indicator
+                              else
+                                "v#{version}"
+                              end
+                            else
+                              "unversioned -> v#{VERSION}" # No version yet
+                            end
+
+          puts "  #{name} (#{version_display})"
           unless config.description.empty?
             puts "    #{config.description}"
           end

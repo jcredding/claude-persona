@@ -3,6 +3,7 @@ require "json"
 
 module ClaudePersona
   struct PersonaConfig
+    getter version : String? # nil means pre-versioning (treat as "0.0.0")
     getter description : String
     getter model : String
     getter directories : DirectoriesConfig?
@@ -12,6 +13,7 @@ module ClaudePersona
     getter prompt : PromptConfig?
 
     def initialize(table : TOML::Table)
+      @version = table["version"]?.try(&.as_s)
       @description = table["description"]?.try(&.as_s) || ""
       @model = table["model"]?.try(&.as_s) || "sonnet"
 

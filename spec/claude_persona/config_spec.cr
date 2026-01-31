@@ -8,6 +8,7 @@ describe ClaudePersona::PersonaConfig do
       TOML
 
       config = ClaudePersona::PersonaConfig.from_toml(toml)
+      config.version.should be_nil
       config.description.should eq("") # default
       config.model.should eq("sonnet")
       config.directories.should be_nil
@@ -15,6 +16,25 @@ describe ClaudePersona::PersonaConfig do
       config.tools.should be_nil
       config.permissions.should be_nil
       config.prompt.should be_nil
+    end
+
+    it "parses version field" do
+      toml = <<-TOML
+      version = "0.1.1"
+      model = "sonnet"
+      TOML
+
+      config = ClaudePersona::PersonaConfig.from_toml(toml)
+      config.version.should eq("0.1.1")
+    end
+
+    it "defaults version to nil when missing" do
+      toml = <<-TOML
+      model = "sonnet"
+      TOML
+
+      config = ClaudePersona::PersonaConfig.from_toml(toml)
+      config.version.should be_nil
     end
 
     it "parses all config sections" do

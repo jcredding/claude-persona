@@ -9,6 +9,9 @@ module ClaudePersona
     The config file uses this structure:
 
     ```toml
+    # Version tracks the claude-persona tool version (auto-managed)
+    version = "#{VERSION}"
+
     # Top-level metadata (description is optional)
     description = "Brief description of this persona's role"
     model = "sonnet"  # or "opus", "haiku"
