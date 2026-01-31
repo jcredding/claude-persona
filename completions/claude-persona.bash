@@ -16,8 +16,9 @@ _claude_persona() {
     local cur prev words cword
     _init_completion || return
 
-    local commands="list generate show rename remove mcp help version"
+    local commands="list generate show rename remove update mcp help version"
     local mcp_commands="available list import import-all show remove"
+    local update_commands="preview force help"
     local global_opts="--vibe --dangerously-skip-permissions --dry-run --resume --help --version -r -h -v"
 
     # Get persona names dynamically
@@ -60,6 +61,10 @@ _claude_persona() {
                 mcp)
                     # MCP subcommands
                     COMPREPLY=($(compgen -W "${mcp_commands}" -- "${cur}"))
+                    ;;
+                update)
+                    # Update subcommands
+                    COMPREPLY=($(compgen -W "${update_commands}" -- "${cur}"))
                     ;;
                 --resume|-r)
                     # Session ID - no completion available

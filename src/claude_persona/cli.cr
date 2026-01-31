@@ -3,7 +3,7 @@ require "option_parser"
 module ClaudePersona
   class CLI
     # Subcommand names that cannot be used as persona names
-    RESERVED_NAMES = %w[list generate show rename remove mcp help version]
+    RESERVED_NAMES = %w[list generate show rename remove mcp update help version]
 
     # Model used for the persona generator
     GENERATOR_MODEL = "opus"
@@ -76,6 +76,8 @@ module ClaudePersona
         remove_persona(rest.first?)
       when "mcp"
         handle_mcp_command(rest)
+      when "update"
+        handle_update_command(rest)
       when "help"
         puts parser
       when "version"
@@ -100,6 +102,9 @@ module ClaudePersona
         show <persona>          Display persona configuration
         rename <old> <new>      Rename a persona
         remove <persona>        Delete a persona
+        update                  Update to latest version
+        update preview          Preview update without changes
+        update force            Reinstall latest version
         mcp available           List MCPs available to import
         mcp list                List imported MCP configs
         mcp import <name>       Import MCP config from Claude
@@ -551,6 +556,64 @@ module ClaudePersona
         claude-persona mcp import-all         Import all MCPs from Claude
         claude-persona mcp show <name>        Display imported MCP config
         claude-persona mcp remove <name>      Delete imported MCP config
+      HELP
+    end
+
+    private def self.handle_update_command(args : Array(String))
+      # Check for help subcommand first
+      if args.includes?("help")
+        show_update_help
+        return
+      end
+
+      # Validate prerequisites
+      unless command_exists?("curl")
+        STDERR.puts "Error: curl is required for updates"
+        STDERR.puts "Install curl and try again"
+        exit(1)
+      end
+
+      unless command_exists?("bash")
+        STDERR.puts "Error: bash is required for updates"
+        exit(1)
+      end
+
+      # Build script URL
+      script_url = "https://raw.githubusercontent.com/kellyredding/claude-persona/main/scripts/update.sh"
+
+      # Pass subcommands to script
+      script_args = args.join(" ")
+
+      # Fetch and execute
+      status = Process.run(
+        "bash",
+        args: ["-c", "curl -fsSL '#{script_url}' | bash -s -- #{script_args}"],
+        input: Process::Redirect::Inherit,
+        output: Process::Redirect::Inherit,
+        error: Process::Redirect::Inherit
+      )
+
+      exit(status.exit_code)
+    end
+
+    private def self.command_exists?(cmd : String) : Bool
+      Process.run("which", args: [cmd], output: Process::Redirect::Close, error: Process::Redirect::Close).success?
+    end
+
+    private def self.show_update_help
+      puts <<-HELP
+      claude-persona update - Update to the latest version
+
+      Usage:
+        claude-persona update           Update to latest version
+        claude-persona update preview   Preview update without making changes
+        claude-persona update force     Reinstall latest (even if up-to-date)
+        claude-persona update help      Show this help
+
+      The update downloads the latest release from GitHub, verifies the
+      checksum, and replaces the current binary.
+
+      Update script: https://raw.githubusercontent.com/kellyredding/claude-persona/main/scripts/update.sh
       HELP
     end
   end
