@@ -4,10 +4,6 @@ module ClaudePersona
     def self.to_toml(config : PersonaConfig, version_override : String? = nil) : String
       lines = [] of String
 
-      # Always write version first
-      version = version_override || config.version || VERSION
-      lines << "version = #{quote(version)}"
-
       # Description (if present)
       unless config.description.empty?
         lines << "description = #{quote(config.description)}"
@@ -15,6 +11,10 @@ module ClaudePersona
 
       # Model
       lines << "model = #{quote(config.model)}"
+
+      # Version (after description and model for readability)
+      version = version_override || config.version || VERSION
+      lines << "version = #{quote(version)}"
 
       # Directories section
       if dirs = config.directories

@@ -38,11 +38,14 @@ module ClaudePersona
         # Convert basic strings (""") to literal strings (''')
         migrated = content.gsub("\"\"\"", "'''")
 
-        # Update version line if present, or add it
+        # Update version line if present, or add it after model line
         if migrated =~ /^version\s*=\s*["'][^"']*["']/m
           migrated = migrated.gsub(/^version\s*=\s*["'][^"']*["']/m, "version = \"#{VERSION}\"")
+        elsif migrated =~ /^model\s*=\s*["'][^"']*["']/m
+          # Insert version after model line
+          migrated = migrated.gsub(/^(model\s*=\s*["'][^"']*["'])/m, "\\1\nversion = \"#{VERSION}\"")
         else
-          # No version line - add at beginning
+          # Fallback: add at beginning (shouldn't happen with valid configs)
           migrated = "version = \"#{VERSION}\"\n" + migrated
         end
 

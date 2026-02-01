@@ -2,7 +2,7 @@ require "../spec_helper"
 
 describe ClaudePersona::TomlWriter do
   describe ".to_toml" do
-    it "serializes minimal config with version first" do
+    it "serializes minimal config with version after model" do
       toml_in = <<-TOML
       model = "sonnet"
       TOML
@@ -10,9 +10,12 @@ describe ClaudePersona::TomlWriter do
       config = ClaudePersona::PersonaConfig.from_toml(toml_in)
       result = ClaudePersona::TomlWriter.to_toml(config)
 
-      # Version should be first line (uses current VERSION when nil)
-      result.should start_with("version = \"#{ClaudePersona::VERSION}\"")
+      # Version should come after model (uses current VERSION when nil)
       result.should contain("model = \"sonnet\"")
+      result.should contain("version = \"#{ClaudePersona::VERSION}\"")
+      model_pos = result.index("model =").not_nil!
+      version_pos = result.index("version =").not_nil!
+      model_pos.should be < version_pos
     end
 
     it "preserves existing version" do
@@ -68,18 +71,19 @@ describe ClaudePersona::TomlWriter do
       result = ClaudePersona::TomlWriter.to_toml(config)
 
       # Verify field order by checking positions
-      version_pos = result.index("version =").not_nil!
+      # Order: description, model, version, then sections
       desc_pos = result.index("description =").not_nil!
       model_pos = result.index("model =").not_nil!
+      version_pos = result.index("version =").not_nil!
       dirs_pos = result.index("[directories]").not_nil!
       mcp_pos = result.index("[mcp]").not_nil!
       tools_pos = result.index("[tools]").not_nil!
       perms_pos = result.index("[permissions]").not_nil!
       prompt_pos = result.index("[prompt]").not_nil!
 
-      version_pos.should be < desc_pos
       desc_pos.should be < model_pos
-      model_pos.should be < dirs_pos
+      model_pos.should be < version_pos
+      version_pos.should be < dirs_pos
       dirs_pos.should be < mcp_pos
       mcp_pos.should be < tools_pos
       tools_pos.should be < perms_pos
