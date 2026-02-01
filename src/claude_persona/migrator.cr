@@ -8,6 +8,69 @@ module ClaudePersona
       ReadOnly       # File is read-only
     end
 
+    # Pre-parse migration: runs BEFORE TOML parsing to fix issues that would
+    # corrupt data during parsing. This is necessary because toml.cr has a bug
+    # with embedded quotes in multi-line basic strings (""").
+    #
+    # Returns true if migration was performed, false if not needed
+    def self.pre_parse_migrate(path : Path) : Bool
+      return false unless File.exists?(path)
+
+      content = File.read(path)
+
+      # Extract version from raw content using regex
+      version = extract_version_from_content(content) || "0.0.0"
+
+      # Check if pre-parse migration is needed (versions before 1.1.0)
+      return false unless compare_versions(version, "1.1.0") < 0
+
+      # Check if file is writable
+      return false unless File::Info.writable?(path)
+
+      # Check if there are any """ to convert
+      return false unless content.includes?("\"\"\"")
+
+      # Create backup
+      backup_path = Path.new("#{path}.bak")
+      File.copy(path, backup_path)
+
+      begin
+        # Convert basic strings (""") to literal strings (''')
+        migrated = content.gsub("\"\"\"", "'''")
+
+        # Update version line if present, or add it
+        if migrated =~ /^version\s*=\s*["'][^"']*["']/m
+          migrated = migrated.gsub(/^version\s*=\s*["'][^"']*["']/m, "version = \"#{VERSION}\"")
+        else
+          # No version line - add at beginning
+          migrated = "version = \"#{VERSION}\"\n" + migrated
+        end
+
+        File.write(path, migrated)
+
+        # Remove backup on success
+        File.delete(backup_path) if File.exists?(backup_path)
+
+        true
+      rescue ex
+        # Restore from backup on failure
+        if File.exists?(backup_path)
+          File.copy(backup_path, path)
+          File.delete(backup_path)
+        end
+        false
+      end
+    end
+
+    # Extract version string from raw file content without parsing TOML
+    private def self.extract_version_from_content(content : String) : String?
+      if content =~ /^version\s*=\s*["']([^"']+)["']/m
+        $1
+      else
+        nil
+      end
+    end
+
     # Check if persona needs upgrade
     def self.needs_upgrade?(config : PersonaConfig) : Bool
       effective_version(config) != VERSION
@@ -32,7 +95,7 @@ module ClaudePersona
       File.copy(path, backup_path)
 
       begin
-        # Run migrations (none exist yet - just stamp version)
+        # Run migrations
         run_migrations(config, path)
 
         # Remove backup on success
@@ -53,16 +116,14 @@ module ClaudePersona
     private def self.run_migrations(config : PersonaConfig, path : Path)
       from_version = effective_version(config)
 
-      # Future migrations would go here:
+      # Migration to 1.1.0 is handled by pre_parse_migrate (string delimiters)
+      # Future post-parse migrations would go here:
       #
-      # if compare_versions(from_version, "0.2.0") < 0
-      #   config = migrate_to_0_2_0(config)
-      # end
-      # if compare_versions(from_version, "0.3.0") < 0
-      #   config = migrate_to_0_3_0(config)
+      # if compare_versions(from_version, "1.2.0") < 0
+      #   config = migrate_to_1_2_0(config)
       # end
 
-      # For now: just stamp with current version
+      # Stamp with current version
       TomlWriter.write(path, config, VERSION)
     end
 

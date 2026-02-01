@@ -87,4 +87,86 @@ describe ClaudePersona::Migrator do
       ClaudePersona::Migrator::Result::ReadOnly.should_not be_nil
     end
   end
+
+  describe ".pre_parse_migrate" do
+    it "converts basic strings to literal strings for versions < 1.1.0" do
+      path = Path.new(File.tempname("pre-parse-test", ".toml"))
+
+      begin
+        # Write a config with old version and basic strings
+        content = <<-TOML
+        version = "1.0.0"
+        model = "sonnet"
+
+        [prompt]
+        system = """
+        Test with "embedded quotes" here.
+        """
+        TOML
+        File.write(path, content)
+
+        # Run pre-parse migration
+        result = ClaudePersona::Migrator.pre_parse_migrate(path)
+        result.should be_true
+
+        # Verify the file was converted
+        migrated = File.read(path)
+        migrated.should contain("'''")
+        migrated.should_not contain("\"\"\"")
+        migrated.should contain("version = \"#{ClaudePersona::VERSION}\"")
+
+        # Verify content can now be parsed without corruption
+        config = ClaudePersona::PersonaConfig.from_toml(migrated)
+        prompt = config.prompt
+        prompt.should_not be_nil
+        prompt.not_nil!.system.should contain("\"embedded quotes\"")
+      ensure
+        File.delete(path) if File.exists?(path)
+      end
+    end
+
+    it "returns false when already at current version" do
+      path = Path.new(File.tempname("pre-parse-test", ".toml"))
+
+      begin
+        content = <<-TOML
+        version = "#{ClaudePersona::VERSION}"
+        model = "sonnet"
+        TOML
+        File.write(path, content)
+
+        result = ClaudePersona::Migrator.pre_parse_migrate(path)
+        result.should be_false
+      ensure
+        File.delete(path) if File.exists?(path)
+      end
+    end
+
+    it "returns false when no basic strings to convert" do
+      path = Path.new(File.tempname("pre-parse-test", ".toml"))
+
+      begin
+        # Config with old version but no """ strings
+        content = <<-TOML
+        version = "1.0.0"
+        model = "sonnet"
+
+        [prompt]
+        system = "Simple single-line prompt"
+        TOML
+        File.write(path, content)
+
+        result = ClaudePersona::Migrator.pre_parse_migrate(path)
+        result.should be_false
+      ensure
+        File.delete(path) if File.exists?(path)
+      end
+    end
+
+    it "returns false for non-existent file" do
+      path = Path.new("/nonexistent/path/test.toml")
+      result = ClaudePersona::Migrator.pre_parse_migrate(path)
+      result.should be_false
+    end
+  end
 end

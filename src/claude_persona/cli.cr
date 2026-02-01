@@ -133,9 +133,15 @@ module ClaudePersona
       end
 
       begin
+        # Pre-parse migration must run BEFORE loading to fix TOML syntax issues
+        # that would corrupt data during parsing (e.g., """ -> ''' conversion)
+        if Migrator.pre_parse_migrate(path)
+          puts "Migrated persona '#{name}' string delimiters (\"\"\" -> ''')"
+        end
+
         config = PersonaConfig.load(name)
 
-        # Check for and perform upgrade if needed
+        # Check for and perform upgrade if needed (post-parse migrations)
         config = maybe_upgrade_persona(name, config, path)
 
         if dryrun
