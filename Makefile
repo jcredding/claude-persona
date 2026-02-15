@@ -5,7 +5,7 @@ BINDIR ?= $(PREFIX)/bin
 BUILDDIR ?= build
 
 # Development
-test:
+test: format
 	crystal spec
 
 lint:
@@ -15,9 +15,9 @@ format:
 	crystal tool format src spec
 
 # check builds dev binary first (integration specs need it)
-check: lint dev test
+check: dev test lint
 
-dev:
+dev: format
 	@mkdir -p $(BUILDDIR)
 	crystal build -o $(BUILDDIR)/claude-persona src/claude_persona.cr
 
