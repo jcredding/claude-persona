@@ -29,11 +29,12 @@ describe "dryrun integration" do
       output.should contain("--dangerously-skip-permissions")
     end
 
-    it "includes --resume with session id" do
+    it "uses --resume when resuming" do
       output = run_dryrun("test-basic", ["--resume", "abc-123-def"])
 
       output.should contain("--resume")
       output.should contain("abc-123-def")
+      output.should_not contain("--session-id")
     end
 
     it "combines --vibe and --resume" do
@@ -42,6 +43,7 @@ describe "dryrun integration" do
       output.should contain("--dangerously-skip-permissions")
       output.should contain("--resume")
       output.should contain("abc-123")
+      output.should_not contain("--session-id")
     end
 
     it "includes --session-id for new sessions" do
@@ -61,6 +63,7 @@ describe "dryrun integration" do
 
       output.should contain("--resume")
       output.should contain("session-123")
+      output.should_not contain("--session-id")
       output.should_not contain("Start your task now.")
       output.should_not contain("-- \"")
     end

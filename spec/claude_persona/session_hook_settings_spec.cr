@@ -25,6 +25,16 @@ describe ClaudePersona::SessionHookSettings do
       ClaudePersona::SessionHookSettings.cleanup(settings_path, session_id_path)
     end
 
+    it "includes CLAUDE_CLI_SESSION_ID env var with session ID" do
+      settings_path, session_id_path = ClaudePersona::SessionHookSettings.create("durable-uuid-456")
+
+      data = JSON.parse(File.read(settings_path.not_nil!))
+      env = data["env"]
+      env["CLAUDE_CLI_SESSION_ID"].as_s.should eq("durable-uuid-456")
+    ensure
+      ClaudePersona::SessionHookSettings.cleanup(settings_path, session_id_path)
+    end
+
     it "writes initial session ID to tracking file" do
       settings_path, session_id_path = ClaudePersona::SessionHookSettings.create("initial-uuid")
 

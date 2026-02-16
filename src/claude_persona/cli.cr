@@ -178,8 +178,8 @@ module ClaudePersona
           settings_placeholder = print_prompt ? nil : "/tmp/claude-persona-settings-XXXXXX.json"
           builder = CommandBuilder.new(
             config,
-            resume_session_id: resume_id,
             session_id: session_id,
+            resuming: !resume_id.nil?,
             vibe: vibe,
             print_prompt: print_prompt,
             output_format: output_format,

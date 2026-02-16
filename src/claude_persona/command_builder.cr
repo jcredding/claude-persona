@@ -5,16 +5,16 @@ module ClaudePersona
 
     def initialize(
       @config : PersonaConfig,
-      resume_session_id : String? = nil,
       session_id : String? = nil,
+      resuming : Bool = false,
       vibe : Bool = false,
       initial_message : String? = nil,
       print_prompt : String? = nil,
       output_format : String? = nil,
       settings_path : String? = nil,
     )
-      @resume_session_id = resume_session_id
       @session_id = session_id
+      @resuming = resuming
       @vibe = vibe
       @print_prompt = print_prompt
       @output_format = output_format
@@ -23,11 +23,11 @@ module ClaudePersona
 
       # Use provided initial_message, or fall back to config's initial_message
       # Skip config's initial_message when resuming (session already started)
-      @initial_message = initial_message || (resume_session_id ? nil : @config.prompt.try(&.initial_message).try { |m| m.empty? ? nil : m })
+      @initial_message = initial_message || (resuming ? nil : @config.prompt.try(&.initial_message).try { |m| m.empty? ? nil : m })
     end
 
     def build : Array(String)
-      add_resume_or_session
+      add_session_id
       add_model
       add_system_prompt
       add_directories
@@ -43,11 +43,13 @@ module ClaudePersona
       @args
     end
 
-    private def add_resume_or_session
-      if session_id = @resume_session_id
-        @args << "--resume" << session_id
-      elsif session_id = @session_id
-        @args << "--session-id" << session_id
+    private def add_session_id
+      if session_id = @session_id
+        if @resuming
+          @args << "--resume" << session_id
+        else
+          @args << "--session-id" << session_id
+        end
       end
     end
 

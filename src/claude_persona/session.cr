@@ -25,9 +25,9 @@ module ClaudePersona
 
       args = CommandBuilder.new(
         @config,
-        @resume_session_id,
-        @session_id,
-        @vibe,
+        session_id: @session_id,
+        resuming: !@resume_session_id.nil?,
+        vibe: @vibe,
         settings_path: @settings_path,
       ).build
 

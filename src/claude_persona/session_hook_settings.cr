@@ -15,6 +15,9 @@ module ClaudePersona
       hook_command = "claude-persona track-session #{session_id_path}"
 
       settings = {
+        "env" => {
+          "CLAUDE_CLI_SESSION_ID" => session_id,
+        },
         "hooks" => {
           "SessionStart" => [
             {

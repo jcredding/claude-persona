@@ -90,15 +90,6 @@ describe ClaudePersona::CommandBuilder do
       args.should_not contain("--dangerously-skip-permissions")
     end
 
-    it "adds --resume with session id" do
-      config = minimal_config
-      builder = ClaudePersona::CommandBuilder.new(config, resume_session_id: "abc-123")
-
-      args = builder.build
-      args.should contain("--resume")
-      args.should contain("abc-123")
-    end
-
     it "adds --session-id when provided" do
       config = minimal_config
       builder = ClaudePersona::CommandBuilder.new(config, session_id: "new-uuid-123")
@@ -106,6 +97,16 @@ describe ClaudePersona::CommandBuilder do
       args = builder.build
       args.should contain("--session-id")
       args.should contain("new-uuid-123")
+    end
+
+    it "uses --resume when resuming" do
+      config = minimal_config
+      builder = ClaudePersona::CommandBuilder.new(config, session_id: "abc-123", resuming: true)
+
+      args = builder.build
+      args.should contain("--resume")
+      args.should contain("abc-123")
+      args.should_not contain("--session-id")
     end
 
     it "omits --session-id when nil" do
@@ -161,7 +162,7 @@ describe ClaudePersona::CommandBuilder do
 
     it "omits config initial_message when resuming a session" do
       config = config_with_initial_message("Begin your task.")
-      builder = ClaudePersona::CommandBuilder.new(config, resume_session_id: "abc-123")
+      builder = ClaudePersona::CommandBuilder.new(config, session_id: "abc-123", resuming: true)
 
       args = builder.build
       args.should_not contain("--")
@@ -172,7 +173,8 @@ describe ClaudePersona::CommandBuilder do
       config = config_with_initial_message("From config")
       builder = ClaudePersona::CommandBuilder.new(
         config,
-        resume_session_id: "abc-123",
+        session_id: "abc-123",
+        resuming: true,
         initial_message: "Explicit override",
       )
 
